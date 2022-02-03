@@ -23,9 +23,10 @@
 ## Assumptions
 
 * Both `config.ini` and `input.txt` are readable and their content is valid.
-* Network is available and webpages are reachable.
+* Network is available, but it's not given that all webpages are reachable.
 * Local FS provides free space and permissions to store the files.
-* The goal is to process the first 100 images in no particular order, determined on-the-fly by their availability. The script will NOT try to equally engage with all websites.
+* There's enough RAM to handle all the images.
+* The goal is to process the first 100 images in no particular order, determined on-the-fly by their availability. The script will NOT try to equally take images from all websites.
 * A possibility of same images being accessed under different URLs can be neglected.
 
 ## Scenarios
@@ -39,26 +40,35 @@
 - [ ] Init logging, configure handlers (console and local file).
 - [ ] Extract a list of webpages from `input.txt`.
 - [ ] Start collecting stats for resulting report.
-- [ ] Init a list of image URLs to process.
+- [ ] Init a list of image URLs to fetch and process.
 - [ ] Start fetching all webpages in parallel with `ThreadPoolExecutor` (network-bound).
-  - [ ] *Worker thread*: once a webpage is fetched, parse its HTML via `bs4` and report a list of image URLs back to the main thread.
-  - [ ] *Main thread*: once each worker's future is completed:
-    - [ ] Store number of image URLs retrieved from a given parsed HTML.
-    - [ ] Iterate over a list of image URLs received from it:
-      - [ ] For each image, decide if it needs to be processed: check if `totals.processed` + `totals.in_processing` (fetching or rotating) is less then 100.
-        - [ ] If yes:
-          - [ ] *Main thread*: `totals.in_processing += 1`.
-          - [ ] *Worker thread*:
-            - [ ] `image.status='not-processed'`.
-            - [ ] Check if it was already fetched (only when `config.to_force_refetch == false`), i.e. exists on FS at `img-originals/{website-domain}/{image-url-encoded}`.
-              - [ ] If yes, rotate and store it directly.
-              - [ ] If no, fetch an image, rotate and store it.
-              - [ ] Once successfully stored:
-                - [ ] `image.status='processed'`.
-                - [ ] Report the URL back to the main thread.
-                - [ ] Once a successfully processed image URL is received on the *main thread*:
-                  - [ ] `totals.in_processing -= 1`.
-                  - [ ] `totals.processed += 1`.
+  - [ ] *Worker thread*: once each webpage is fetched, parse its HTML content with `bs4` and report a list of image URLs back to the main thread.
+    - [ ] Log an error if webpage fetching fails.
+  - [ ] *Main thread*:
+    - [ ] Once each worker's future is completed:
+      - [ ] Remember a number of image URLs retrieved from a given parsed HTML (`stats[website_domain].number_of_images=...`).
+      - [ ] Check if there's a need to proceed: `totals.processed < 100`.
+      - [ ] If no, log a message.
+      - [ ] If yes:
+        - [ ] Append received image URLs to the list.
+        - [ ] Start/continue iterating over the list of image URLs:
+          - [ ] For each image, decide if it needs to be processed: check if `totals.processed + totals.in_processing < 100` (fetching or rotating).
+            - [ ] If yes:
+              - [ ] *Main thread*: `totals.in_processing += 1`.
+              - [ ] *Worker thread*:
+                - [ ] `image.status='not-processed'`.
+                - [ ] Check if it was already fetched (only when `config.to_force_refetch == false`), i.e. exists on FS at `img-originals/{website-domain}/{image-url-encoded}`.
+                  - [ ] If yes, rotate and store it directly.
+                  - [ ] If no, fetch an image, rotate and store it.
+                    - [ ] If any of the steps fail:
+                      - [ ] `image.status='failed_to_...'`.
+                      - [ ] Log an error
+                  - [ ] Once successfully stored:
+                    - [ ] `image.status='processed'`.
+                    - [ ] Report the URL back to the main thread.
+                    - [ ] Once a successfully processed image URL is received on the *main thread*:
+                      - [ ] `totals.in_processing -= 1`.
+                      - [ ] `totals.processed += 1`.
 - [ ] Log resulting report:
   * Numbers of images (per website and total):
     * Available for fetching.
