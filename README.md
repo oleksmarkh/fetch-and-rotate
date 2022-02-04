@@ -22,10 +22,15 @@
 
 ## Assumptions
 
+### Execution env
+
 * Both `config.ini` and `input.txt` are readable and their content is valid.
 * Network is available, but it's not given that all webpages are reachable.
 * There's enough RAM to handle all the images.
 * Local FS provides permissions and enough free space to store the files.
+
+### Functional
+
 * A possibility of same images being accessed under different URLs can be neglected (all images are treated as unique as long as their URLs differ).
 * Even though it's not specified in the assignment, the script will try to equally take images from all websites, aiming for robust output.
 
@@ -39,24 +44,24 @@
 - [x] Extract config from `config.ini`.
 - [x] Init logging, configure handlers (console and local file).
 - [x] Extract a list of webpages from `input.txt`.
-- [ ] Instantiate an `ImageProcessor` (to hold a state of entire process).
-- [ ] Start collecting stats for resulting report.
-- [ ] Start fetching all webpages in parallel with `ThreadPoolExecutor` or `asyncio` (network-bound).
-  - [ ] *Worker thread*:
-    - [ ] If webpage fetching fails: log an error and report it back.
+<!-- - [ ] Instantiate an `ImageProcessor` (to hold a state of entire process). -->
+<!-- - [ ] Start collecting stats for resulting report. -->
+- [x] Init a `{webpage: webpage_image_url_list}` dict of all image URLs available for processing.
+- [x] Start fetching all webpages in parallel with `asyncio` (network-bound).
+  - [ ] *Sub coroutine*:
+    - [x] If webpage fetching fails: return an error.
     - [ ] If fetching succeeds, parse its HTML content with `bs4`:
-      - [ ] If parsing fails: log an error and report it back.
-      - [ ] If parsing succeeds: and report a list of image URLs back to the main thread (even if it's empty).
-  - [ ] *Main thread*:
-    - [ ] Init a `{webpage: webpage_image_url_list}` dict of all image URLs available for processing.
-    - [ ] Once each worker's reports back, update the dict:
-      - [ ] If worker fails to fetch or parse: update stats, exclude its key from the dict.
-      - [ ] If worker succeeds: insert a list of image URLs.
+      - [ ] If parsing fails: return an error.
+      - [ ] If parsing succeeds: report a list of image URLs back to the main coroutine (even if it's empty).
+  - [ ] *Main coroutine*:
+    - [x] Once each worker's reports back, update the dict:
+      - [x] If worker fails to fetch or parse: log an error.
+      - [x] If worker succeeds: insert a list of image URLs.
     - [ ] Once all workers are finished:
       - [ ] Convert the dict into a list of all image URLs, by picking URLs from each webpage (until there are no more URLs to pick): `[p0[0], p1[0], p2[0], p0[1], p2[1], p0[2], p2[2], ...]`
         - [ ] Cover this function with unit tests.
       - [ ] Slice first 100 image URLs from this "normalized" list and start fetching the images in parallel (network-bound).
-        - [ ] *Worker thread*:
+        - [ ] *Sub coroutine*:
           - [ ] `image.status='not-processed'`.
           - [ ] Check if it was already fetched (only when `config.to_force_refetch == false`), i.e. exists on FS at `img-originals/{website-domain}/{image-url-encoded}`.
             - [ ] If yes, rotate and store it directly.
@@ -66,8 +71,8 @@
                 - [ ] Log an error and report it back.
             - [ ] Once successfully stored:
               - [ ] `image.status='processed'`.
-              - [ ] Report the URL back to the main thread.
-        - [ ] *Main thread*:
+              - [ ] Report the URL back to the main coroutine.
+        - [ ] *Main coroutine*:
           - [ ] If an error is received from any worker, spawn another one for processing the next image from the list (101-st, 102-nd, ...).
           - [ ] Once 100 images were successfully processed or the list is exhausted (no more URLs to try), log the resulting report:
             * Numbers of images (per webpage and total):
