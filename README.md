@@ -36,12 +36,13 @@
 
 ## Flow
 
-- [ ] Extract config from `config.ini`.
-- [ ] Init logging, configure handlers (console and local file).
+- [x] Extract config from `config.ini`.
+- [x] Init logging, configure handlers (console and local file).
+- [ ] Instantiate an `ImageProcessor` (to hold a state of entire process).
 - [ ] Extract a list of webpages from `input.txt`.
 - [ ] Start collecting stats for resulting report.
 - [ ] Init a list of image URLs to fetch and process.
-- [ ] Start fetching all webpages in parallel with `ThreadPoolExecutor` (network-bound).
+- [ ] Start fetching all webpages in parallel with `ThreadPoolExecutor` or `asyncio` (network-bound).
   - [ ] *Worker thread*: once each webpage is fetched, parse its HTML content with `bs4` and report a list of image URLs back to the main thread.
     - [ ] Log an error if webpage fetching fails.
   - [ ] *Main thread*:
@@ -86,12 +87,30 @@
 ## Dependencies
 
 * HTTP transport: [`requests`](https://docs.python-requests.org/en/latest/user/quickstart/)
-* HTML parsing: [`bs4`](https://www.crummy.com/software/BeautifulSoup/bs4/doc/)
+* HTML parsing: [`beautifulsoup4`](https://www.crummy.com/software/BeautifulSoup/bs4/doc/)
 * image processing: [`pillow`](https://pillow.readthedocs.io/)
   * [`im.transpose(Image.ROTATE_180)`](https://pillow.readthedocs.io/en/stable/handbook/tutorial.html#transposing-an-image)
 
-## Setup
+## Commands
 
 ```bash
-$ ...
+# python version
+$ brew install pyenv
+$ pyenv install 3.10.2
+
+# deps
+$ curl -sSL https://install.python-poetry.org | python3 -
+$ poetry install
+
+# run
+$ time poetry run python ./src/main.py
+
+# lint
+$ poetry run pycodestyle --show-source ./src/
+
+# unit tests
+$ poetry run pytest ./src/
+
+# clean logs
+$ rm ./log/*.log
 ```
