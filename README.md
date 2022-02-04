@@ -38,8 +38,8 @@
 
 - [x] Extract config from `config.ini`.
 - [x] Init logging, configure handlers (console and local file).
+- [x] Extract a list of webpages from `input.txt`.
 - [ ] Instantiate an `ImageProcessor` (to hold a state of entire process).
-- [ ] Extract a list of webpages from `input.txt`.
 - [ ] Start collecting stats for resulting report.
 - [ ] Init a list of image URLs to fetch and process.
 - [ ] Start fetching all webpages in parallel with `ThreadPoolExecutor` or `asyncio` (network-bound).

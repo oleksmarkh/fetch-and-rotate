@@ -1,30 +1,37 @@
 # import sys
-from configparser import ConfigParser
+from configparser import ConfigParser, SectionProxy
 from pathlib import PurePath
 import datetime
 import logging
 
 
-# config
-config_parser = ConfigParser()
-config_parser.read('config.ini')
-config = config_parser['DEFAULT']
-log_dirname = config['log_dirname']
-request_timeout = config.getint('request_timeout')
-user_agent = config['user_agent']
+def read_config(filename: str) -> SectionProxy:
+  config_parser = ConfigParser()
+  config_parser.read(filename)
+  return config_parser['DEFAULT']
 
-# logging
-logging.basicConfig(
-  format='%(asctime)s [%(threadName)s] [%(levelname)s] %(message)s',
-  level=logging.DEBUG,
-  handlers=[
-    logging.StreamHandler(),
-    logging.FileHandler(PurePath(
-      log_dirname,
-      f"{datetime.datetime.now().strftime('%Y-%m-%d--%H-%M-%S')}.log"
-    ))
-  ]
-)
+
+def init_logging(dirname: str, filename_datetime_format: str) -> None:
+  filename = f"{datetime.datetime.now().strftime(filename_datetime_format)}.log"
+  logging.basicConfig(
+    format='%(asctime)s [%(threadName)s] [%(levelname)s] %(message)s',
+    level=logging.DEBUG,
+    handlers=[
+      logging.StreamHandler(),
+      logging.FileHandler(PurePath(dirname, filename))
+    ]
+  )
+
+
+def read_webpage_list(filename: str) -> list[str]:
+  with open(filename) as file:
+    return file.read().splitlines()
+
 
 if __name__ == '__main__':
-  logging.info('start')
+  config = read_config('config.ini')
+  # request_timeout = config.getint('request_timeout')
+  # user_agent = config['user_agent']
+  init_logging(config['log_dirname'], '%Y-%m-%d--%H-%M-%S')
+  webpage_list = read_webpage_list(config['input_filename'])
+  logging.info(f"List of webpages ({len(webpage_list)}): {webpage_list}")
