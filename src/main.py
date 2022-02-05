@@ -1,4 +1,3 @@
-# import sys
 import asyncio
 import datetime
 import logging
@@ -49,6 +48,7 @@ def parse_img_urls(markup: str, base_url: str) -> list[str]:
   Resolves each image URL against given base URL.
   Removes duplicates.
   """
+
   keywords_to_exclude = {'adServer', 'scorecardresearch.com', '1px', 'avatar', 'profile', 'logo', 'static'}
   soup = BeautifulSoup(markup, 'html.parser')
 
@@ -71,6 +71,7 @@ async def fetch_and_parse_img_urls(
   Fetches a single webpage HTML content and parses image URLs from it.
   Resolves each image URL against final webpage URL, accounting for redirects.
   """
+
   response = fetch(webpage_url, request_timeout, user_agent)
   return parse_img_urls(response.text, response.url)
 
@@ -103,9 +104,40 @@ async def retrieve_img_urls(
   return img_urls
 
 
+def mix_urls(urls: dict[str, list[str]]) -> list[str]:
+  """
+  Flattens a dict (URLs per webpage) into a list of all image URLs,
+  by picking URLs from each webpage (iterating over all lists with a common index):
+  ```
+  {
+    p0: [p0[0]],
+    p1: [],
+    p2: [p2[0], p2[1], p2[2], p2[3]],
+    p3: [p3[0], p3[1]],
+  } => [
+    p0[0], p2[0], p3[0],
+           p2[1], p3[1],
+           p2[2],
+           p2[3]
+  ]
+  ```
+  """
+
+  result = []
+  url_list_list = urls.values()
+  for i in range(0, max(*[len(url_list) for url_list in url_list_list])):
+    for url_list in url_list_list:
+      if i < len(url_list):
+        result.append(url_list[i])
+  return result
+
+
 async def main(webpage_url_list: list[str], request_timeout: int, user_agent: str) -> None:
   img_urls = await retrieve_img_urls(webpage_url_list, request_timeout, user_agent)
-  logging.info(f"Image URLs per webpage: {img_urls}")
+  logging.info(f"Image URLs per webpage ({[(k, len(v)) for k, v in img_urls.items()]}): {img_urls}")
+
+  img_url_list = mix_urls(img_urls)
+  logging.info(f"All image URLs available ({len(img_url_list)}): {img_url_list}")
 
 
 if __name__ == '__main__':

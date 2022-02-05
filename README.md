@@ -60,7 +60,7 @@
   - [ ] *Main coroutine*: once all sub coroutines are finished:
     - [x] If any sub coroutine fails to fetch or parse: log an error.
     - [x] Compose a `{webpage_url: [img1_url, img2_url, ...]}` dict of all image URLs available for processing..
-    - [ ] Convert the dict into a list of all image URLs, by picking URLs from each webpage (until there are no more URLs to pick): `[p0[0], p1[0], p2[0], p0[1], p2[1], p0[2], p2[2], ...]`
+    - [x] Mix all image URLs by picking them from each webpage (common-index iteration).
       - [ ] Cover this function with unit tests.
     - [ ] Slice first 100 image URLs from this "normalized" list and start fetching the images in parallel (network-bound).
       - [ ] *Sub coroutine*:
