@@ -1,6 +1,7 @@
 import asyncio
 import datetime
 import logging
+from urllib import response
 import requests
 import sys
 from configparser import ConfigParser, SectionProxy
@@ -34,7 +35,9 @@ def read_webpage_list(filename: str) -> list[str]:
 
 def fetch(url: str, timeout: int, user_agent: str) -> requests.Response:
   headers = {'User-Agent': user_agent}
-  return requests.get(url, timeout=timeout, headers=headers)
+  response = requests.get(url, timeout=timeout, headers=headers)
+  response.raise_for_status()
+  return response
 
 
 async def fetch_and_parse(
@@ -75,22 +78,36 @@ async def fetch_and_parse_all(
   return img_urls
 
 
-async def download_and_rotate(img_url: str) -> str:
+async def download_and_rotate(
+  img_url: str, request_timeout: int, user_agent: str,
+  originals_dirname: str, output_dirname: str
+) -> str:
   """
   Downloads, rotates and stores a single image.
   Returns image filename.
   """
-  return img_url
+  response = fetch(img_url, request_timeout, user_agent)
+  img_filename = urlutils.convert(img_url)
+  # TODO: pass a webpage domain as "webpage_dirname"
+  with open(PurePath(originals_dirname, webpage_dirname, img_filename), 'wb') as img_file:
+    img_file.write(response.content)
+  return img_filename
 
 
-async def download_and_rotate_batch(img_url_list: list[str]) -> tuple[int, int]:
+async def download_and_rotate_batch(
+  img_url_list: list[str], request_timeout: int, user_agent: str,
+  originals_dirname: str, output_dirname: str
+) -> tuple[int, int]:
   """
   Concurrently executes all tasks of downloading and rotating images.
   Returns a tuple with numbers of failed and successful attempts: `(err_count, success_count)`.
   """
 
   task_list = [
-    download_and_rotate(url)
+    download_and_rotate(
+      url, request_timeout, user_agent,
+      originals_dirname, output_dirname
+    )
     for url in img_url_list
   ]
   # each element is either an Exception or an image filename
@@ -110,7 +127,11 @@ async def download_and_rotate_batch(img_url_list: list[str]) -> tuple[int, int]:
   return (err_count, success_count)
 
 
-async def download_and_rotate_all(img_url_list: list[str], max_img_count: int) -> tuple[int, int]:
+async def download_and_rotate_all(
+  img_url_list: list[str], max_img_count: int,
+  request_timeout: int, user_agent: str,
+  originals_dirname: str, output_dirname: str
+) -> tuple[int, int]:
   """
   Slices the first batch of `max_img_count` URLs from `img_url_list`
   and schedules them for downloading and rotation.
@@ -126,7 +147,11 @@ async def download_and_rotate_all(img_url_list: list[str], max_img_count: int) -
   success_count_total = 0
   while True:
     logging.info(f"Downloading and rotating images (batch #{batch_index}): [{slice_from}, {slice_to})")
-    err_count, success_count = await download_and_rotate_batch(img_url_list[slice_from:slice_to])
+    err_count, success_count = await download_and_rotate_batch(
+      img_url_list[slice_from:slice_to],
+      request_timeout, user_agent,
+      originals_dirname, output_dirname
+    )
     err_count_total += err_count
     success_count_total += success_count
     logging.info((
@@ -150,7 +175,9 @@ async def download_and_rotate_all(img_url_list: list[str], max_img_count: int) -
 
 
 async def main(
-  webpage_url_list: list[str], max_img_count: int, request_timeout: int, user_agent: str
+  webpage_url_list: list[str], max_img_count: int,
+  request_timeout: int, user_agent: str,
+  originals_dirname: str, output_dirname: str
 ) -> None:
   img_urls = await fetch_and_parse_all(webpage_url_list, request_timeout, user_agent)
   logging.info(f"Image URLs per webpage: {[(k, len(v)) for k, v in img_urls.items()]}")
@@ -164,7 +191,11 @@ async def main(
     logging.warning("Nothing to download, no image URLs available")
     sys.exit(1)
 
-  err_count, success_count = await download_and_rotate_all(img_url_list, max_img_count)
+  err_count, success_count = await download_and_rotate_all(
+    img_url_list, max_img_count,
+    request_timeout, user_agent,
+    originals_dirname, output_dirname
+  )
   logging.info(f"Images failed/succeeded/aimed (total): {err_count}/{success_count}/{max_img_count}")
   sys.exit(0 if success_count == max_img_count else 1)
 
@@ -178,7 +209,6 @@ if __name__ == '__main__':
 
   asyncio.run(main(
     webpage_list,
-    config.getint('max_img_count'),
-    config.getfloat('request_timeout'),
-    config['user_agent']
+    config.getint('max_img_count'), config.getfloat('request_timeout'),
+    config['user_agent'], config['originals_dirname'], config['output_dirname']
   ))

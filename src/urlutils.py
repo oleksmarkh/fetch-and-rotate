@@ -1,24 +1,28 @@
+from pathlib import PurePath
 from urllib.parse import urljoin, urldefrag, urlsplit, quote_plus
 from bs4 import BeautifulSoup
 
 
-def convert(url: str) -> tuple[str, str]:
+def recompose(netloc: str, path: str, query: str, delimiter: str) -> str:
+  if query == '':
+    return f"{netloc}{delimiter}{path}"
+  p = PurePath(path)
+  p1 = str(p.with_stem(f"{p.stem}{delimiter}{query}").with_suffix(''.join(p.suffixes)))
+  return f"{netloc}{delimiter}{p1}"
+
+
+def convert(url: str) -> str:
   """
-  Converts an absolute URL into a `(dirname, filename)` tuple, e.g.
+  Converts an absolute URL into a `(dirname, filename)` tuple,
+  moving the query part before path suffix
+  and removing the leading slash, e.g.
   ```
   'https://sub.example.org/images/SomeExample.jpg?SomeParam=1' =>
-  ('sub.example.org', 'images%2FSomeExample.jpg%3FSomeParam%3D1')
+  'sub.example.org--images%2FSomeExample--SomeParam%3D1.jpg'
+  ```
   """
-
   components = urlsplit(url)
-  dirname = components.netloc
-  filename = quote_plus(
-    components.path[1:]
-    if components.query == ''
-    else f"{components.path[1:]}?{components.query}"
-  )
-
-  return (dirname, filename)
+  return quote_plus(recompose(components.netloc, components.path[1:], components.query, '--'))
 
 
 def resolve(url: str, base_url: str) -> str:
