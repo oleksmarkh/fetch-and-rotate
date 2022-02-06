@@ -31,13 +31,27 @@
 
 ### Functional
 
-* A possibility of same images being accessed under different URLs can be neglected (all images are treated as unique as long as their URLs differ).
-* Even though it's not specified in the assignment, the script will try to equally take images from all websites, aiming for robust output.
+* A possibility of same images being accessed under different URLs can be
+neglected (all images are treated as unique as long as their URLs differ).
+* Even though it's not specified in the assignment,
+the script will try to equally take images from all websites,
+aiming for robust output.
 
 ## Scenarios
 
-1. Script is executed exactly once. Whatever happens - it aims to fetch/process a given number of images.
-2. Script can be executed multiple times, due to various reasons (e.g. the list of webpages changed, significant time passed after previous execution, some webpages are non-idempotent, previous executions failed to process exactly 100 images, etc.).
+1. Script is executed exactly once.
+Whatever happens - it aims to fetch/process a given number of images.
+2. Script can be executed multiple times, due to various reasons, e.g.:
+* Previous executions failed to process exactly 100 images.
+* The list of webpages changed.
+* Some webpages are non-idempotent (content changed).
+
+## Possible improvements.
+
+Manage a `set()` to `asyncio.wait()` for `asyncio.create_task()`
+to schedule image processing in a pool (concurrent queue),
+instead of batching until success or exhaustion.
+Additionally, it would limit the number of outbound connections.
 
 ## Flow
 

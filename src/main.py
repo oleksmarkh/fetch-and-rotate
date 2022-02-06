@@ -5,8 +5,8 @@ import requests
 import sys
 from configparser import ConfigParser, SectionProxy
 from pathlib import PurePath
-from urllib.parse import urljoin, urldefrag
-from bs4 import BeautifulSoup
+
+import urlutils
 
 
 def read_config(filename: str) -> SectionProxy:
@@ -37,34 +37,6 @@ def fetch(url: str, timeout: int, user_agent: str) -> requests.Response:
   return requests.get(url, timeout=timeout, headers=headers)
 
 
-def normalize_img_url(url: str, base_url: str) -> str:
-  return urldefrag(urljoin(base_url, url))[0]
-
-
-def parse_img_urls(markup: str, base_url: str) -> list[str]:
-  """
-  Parses image tags from given HTML markup.
-  Filters out image URLs containing keywords from hardcoded list.
-  Removes fragment (hash) from image URLs.
-  Resolves each image URL against given base URL.
-  Removes duplicates.
-  """
-
-  keywords_to_exclude = {'adServer', 'scorecardresearch.com', '1px', 'avatar', 'profile', 'logo', 'static'}
-  soup = BeautifulSoup(markup, 'html.parser')
-
-  # "soup.find_all()" returns a "ResultSet",
-  # which may contain different tags with same "src" attr values.
-  # Also it's possible to end up with same absolute URLs
-  # after resolving different relative URLs and removing fragments.
-  # That's why deduplication happens after all transformations.
-  return list(set([
-    normalize_img_url(img_tag['src'], base_url)
-    for img_tag in soup.find_all('img', attrs={'src': True})
-    if not any(keyword in img_tag['src'] for keyword in keywords_to_exclude)
-  ]))
-
-
 async def fetch_and_parse(
   webpage_url: str, request_timeout: int, user_agent: str
 ) -> list[str]:
@@ -72,9 +44,8 @@ async def fetch_and_parse(
   Fetches a single webpage HTML content and parses image URLs from it.
   Resolves each image URL against final webpage URL, accounting for redirects.
   """
-
   response = fetch(webpage_url, request_timeout, user_agent)
-  return parse_img_urls(response.text, response.url)
+  return urlutils.parse(response.text, response.url)
 
 
 async def fetch_and_parse_all(
@@ -102,42 +73,6 @@ async def fetch_and_parse_all(
       img_urls[webpage_url] = result
 
   return img_urls
-
-
-def mix_urls(urls: dict[str, list[str]]) -> list[str]:
-  """
-  Flattens a dict (URLs per webpage) into a list of all image URLs,
-  by picking URLs from each webpage (iterating over all lists with a common index):
-  ```
-  {
-    p0: [p0[0]],
-    p1: [],
-    p2: [p2[0], p2[1], p2[2], p2[3]],
-    p3: [p3[0], p3[1]],
-  } => [
-    p0[0], p2[0], p3[0],
-           p2[1], p3[1],
-           p2[2],
-           p2[3]
-  ]
-  ```
-  """
-
-  url_list_list = urls.values()
-
-  if (len(url_list_list) == 0):
-    return []
-
-  if (len(url_list_list) == 1):
-    return list(url_list_list)[0]
-
-  result = []
-  for i in range(0, max(*[len(url_list) for url_list in url_list_list])):
-    for url_list in url_list_list:
-      if i < len(url_list):
-        result.append(url_list[i])
-
-  return result
 
 
 async def download_and_rotate(img_url: str) -> str:
@@ -221,7 +156,7 @@ async def main(
   logging.info(f"Image URLs per webpage: {[(k, len(v)) for k, v in img_urls.items()]}")
   # logging.debug(f"Image URLs per webpage: {img_urls}")
 
-  img_url_list = mix_urls(img_urls)
+  img_url_list = urlutils.mix(img_urls)
   logging.info(f"All image URLs available: {len(img_url_list)}")
   # logging.debug(f"All image URLs available: {img_url_list}")
 
