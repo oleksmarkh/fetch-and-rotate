@@ -1,19 +1,50 @@
 import asyncio
 import datetime
 import logging
-from urllib import response
 import requests
 import sys
-from configparser import ConfigParser, SectionProxy
+from dataclasses import dataclass
+from enum import Enum
+from configparser import ConfigParser
 from pathlib import PurePath
 
+import fsutils
 import urlutils
 
 
-def read_config(filename: str) -> SectionProxy:
+@dataclass
+class Config:
+  max_img_count: int
+  request_timeout: float
+  user_agent: str
+  input_filename: str
+  log_dirname: str
+  originals_dirname: str
+  output_dirname: str
+
+
+class ImgStatus(Enum):
+  NOT_PROCESSED = 'not-processed'
+  DOWNLOADED = 'downloaded'
+  PROCESS = 'processed'
+
+
+@dataclass
+class Img:
+  url: str
+  dirname: str
+  filename: str
+  status: ImgStatus = ImgStatus.NOT_PROCESSED
+
+
+def read_config(filename: str) -> Config:
   config_parser = ConfigParser()
   config_parser.read(filename)
-  return config_parser['DEFAULT']
+  c = config_parser['DEFAULT']
+  return Config(
+    c.getint('max_img_count'), c.getfloat('request_timeout'), c['user_agent'],
+    c['input_filename'], c['log_dirname'], c['originals_dirname'], c['output_dirname']
+  )
 
 
 def config_logging(dirname: str, filename_datetime_format: str) -> None:
@@ -28,32 +59,23 @@ def config_logging(dirname: str, filename_datetime_format: str) -> None:
   )
 
 
-def read_webpage_list(filename: str) -> list[str]:
-  with open(filename) as file:
-    return file.read().splitlines()
-
-
-def fetch(url: str, timeout: int, user_agent: str) -> requests.Response:
-  headers = {'User-Agent': user_agent}
-  response = requests.get(url, timeout=timeout, headers=headers)
+def fetch(url: str, config: Config) -> requests.Response:
+  headers = {'User-Agent': config.user_agent}
+  response = requests.get(url, timeout=config.request_timeout, headers=headers)
   response.raise_for_status()
   return response
 
 
-async def fetch_and_parse(
-  webpage_url: str, request_timeout: int, user_agent: str
-) -> list[str]:
+async def fetch_and_parse(webpage_url: str, config) -> list[str]:
   """
   Fetches a single webpage HTML content and parses image URLs from it.
   Resolves each image URL against final webpage URL, accounting for redirects.
   """
-  response = fetch(webpage_url, request_timeout, user_agent)
+  response = fetch(webpage_url, config)
   return urlutils.parse(response.text, response.url)
 
 
-async def fetch_and_parse_all(
-  webpage_url_list: list[str], request_timeout: int, user_agent: str
-) -> dict[str, list[str]]:
+async def fetch_and_parse_all(webpage_url_list: list[str], config: Config) -> dict[str, list[str]]:
   """
   Concurrently executes all tasks of fetching webpages and parsing image URLs from them.
   Logs errors and only includes successfully parsed webpages into resulting dict:
@@ -61,7 +83,7 @@ async def fetch_and_parse_all(
   """
 
   task_list = [
-    fetch_and_parse(url, request_timeout, user_agent)
+    fetch_and_parse(url, config)
     for url in webpage_url_list
   ]
   # each element is either an Exception or a list of image URLs
@@ -78,37 +100,29 @@ async def fetch_and_parse_all(
   return img_urls
 
 
-async def download_and_rotate(
-  img_url: str, request_timeout: int, user_agent: str,
-  originals_dirname: str, output_dirname: str
-) -> str:
+async def download_and_rotate(img: Img, config: Config) -> str:
   """
   Downloads, rotates and stores a single image.
   Returns image filename.
   """
-  response = fetch(img_url, request_timeout, user_agent)
-  img_filename = urlutils.convert(img_url)
-  # TODO: pass a webpage domain as "webpage_dirname"
-  with open(PurePath(originals_dirname, webpage_dirname, img_filename), 'wb') as img_file:
-    img_file.write(response.content)
-  return img_filename
+  original_dirpath = PurePath(config.originals_dirname, img.dirname)
+  fsutils.mkdir(original_dirpath)
+  fsutils.write_binary(
+    PurePath(original_dirpath, img.filename),
+    fetch(img.url, config).content
+  )
+  return img.filename
 
 
-async def download_and_rotate_batch(
-  img_url_list: list[str], request_timeout: int, user_agent: str,
-  originals_dirname: str, output_dirname: str
-) -> tuple[int, int]:
+async def download_and_rotate_batch(img_list: list[Img], config: Config) -> tuple[int, int]:
   """
   Concurrently executes all tasks of downloading and rotating images.
   Returns a tuple with numbers of failed and successful attempts: `(err_count, success_count)`.
   """
 
   task_list = [
-    download_and_rotate(
-      url, request_timeout, user_agent,
-      originals_dirname, output_dirname
-    )
-    for url in img_url_list
+    download_and_rotate(img, config)
+    for img in img_list
   ]
   # each element is either an Exception or an image filename
   result_list = await asyncio.gather(*task_list, return_exceptions=True)
@@ -116,99 +130,87 @@ async def download_and_rotate_batch(
   err_count = 0
   success_count = 0
   for i, result in enumerate(result_list):
-    img_url = img_url_list[i]
+    img = img_list[i]
     if (isinstance(result, Exception)):
       err_count += 1
-      logging.error(f"Failed to download or rotate {img_url}: {result}")
+      logging.error(f"Failed to download or rotate {img.url}: {result}")
     else:
       success_count += 1
-      # logging.info(f"Successfully downloaded and rotated: {img_url}")
+      # logging.info(f"Successfully downloaded and rotated: {img.url}")
 
   return (err_count, success_count)
 
 
-async def download_and_rotate_all(
-  img_url_list: list[str], max_img_count: int,
-  request_timeout: int, user_agent: str,
-  originals_dirname: str, output_dirname: str
-) -> tuple[int, int]:
+async def download_and_rotate_all(img_list: list[Img], config: Config) -> tuple[int, int]:
   """
-  Slices the first batch of `max_img_count` URLs from `img_url_list`
+  Slices the first batch of `max_img_count` URLs from `img_list`
   and schedules them for downloading and rotation.
   If some of them fail, slices and runs another batch.
-  Repeats until either entire `img_url_list` is exhausted or a total of `max_img_count` succeed.
+  Repeats until either entire `img_list` is exhausted or a total of `max_img_count` succeed.
   Returns accumulated `(err_count, success_count)` totals for all batches.
   """
 
   batch_index = 0
   slice_from = 0  # inclusive
-  slice_to = max_img_count  # exclusive
+  slice_to = config.max_img_count  # exclusive
   err_count_total = 0
   success_count_total = 0
   while True:
     logging.info(f"Downloading and rotating images (batch #{batch_index}): [{slice_from}, {slice_to})")
-    err_count, success_count = await download_and_rotate_batch(
-      img_url_list[slice_from:slice_to],
-      request_timeout, user_agent,
-      originals_dirname, output_dirname
-    )
+
+    err_count, success_count = await download_and_rotate_batch(img_list[slice_from:slice_to], config)
     err_count_total += err_count
     success_count_total += success_count
+
     logging.info((
       f"Images failed/succeeded/aimed (batch #{batch_index}): "
       f"{err_count}/{success_count}/{slice_to - slice_from}"
     ))
 
-    if (slice_to > len(img_url_list)):
-      logging.warning(f"Image URL list is exhausted: {len(img_url_list)}")
+    if (slice_to > len(img_list)):
+      logging.warning(f"Image list is exhausted: {len(img_list)}")
       break
 
-    if (success_count_total >= max_img_count):
+    if (success_count_total >= config.max_img_count):
       logging.info(f"Successfully reached {success_count_total} images")
       break
 
     batch_index += 1
     slice_from = slice_to
-    slice_to = slice_from + (max_img_count - success_count_total)
+    slice_to = slice_from + (config.max_img_count - success_count_total)
 
   return (err_count_total, success_count_total)
 
 
-async def main(
-  webpage_url_list: list[str], max_img_count: int,
-  request_timeout: int, user_agent: str,
-  originals_dirname: str, output_dirname: str
-) -> None:
-  img_urls = await fetch_and_parse_all(webpage_url_list, request_timeout, user_agent)
+async def main(config: Config) -> None:
+  config_logging(config.log_dirname, '%Y-%m-%d--%H-%M-%S')
+
+  webpage_url_list = fsutils.read_line_list(config.input_filename)
+  logging.info(f"List of webpages ({len(webpage_url_list)}): {webpage_url_list}")
+
+  img_urls = await fetch_and_parse_all(webpage_url_list, config)
   logging.info(f"Image URLs per webpage: {[(k, len(v)) for k, v in img_urls.items()]}")
   # logging.debug(f"Image URLs per webpage: {img_urls}")
 
-  img_url_list = urlutils.mix(img_urls)
-  logging.info(f"All image URLs available: {len(img_url_list)}")
-  # logging.debug(f"All image URLs available: {img_url_list}")
+  img_list = [
+    Img(
+      img_url,
+      urlutils.get_dirname(webpage_url),
+      urlutils.get_filename(img_url)
+    )
+    for webpage_url, img_url in urlutils.mix(img_urls)
+  ]
+  logging.info(f"All image URLs available: {len(img_list)}")
+  # logging.debug(f"All image URLs available: {img_list}")
 
-  if (len(img_url_list) == 0):
+  if (len(img_list) == 0):
     logging.warning("Nothing to download, no image URLs available")
     sys.exit(1)
 
-  err_count, success_count = await download_and_rotate_all(
-    img_url_list, max_img_count,
-    request_timeout, user_agent,
-    originals_dirname, output_dirname
-  )
-  logging.info(f"Images failed/succeeded/aimed (total): {err_count}/{success_count}/{max_img_count}")
-  sys.exit(0 if success_count == max_img_count else 1)
+  err_count, success_count = await download_and_rotate_all(img_list, config)
+  logging.info(f"Images failed/succeeded/aimed (total): {err_count}/{success_count}/{config.max_img_count}")
+  sys.exit(0 if success_count == config.max_img_count else 1)
 
 
 if __name__ == '__main__':
-  config = read_config('config.ini')
-  config_logging(config['log_dirname'], '%Y-%m-%d--%H-%M-%S')
-
-  webpage_list = read_webpage_list(config['input_filename'])
-  logging.info(f"List of webpages ({len(webpage_list)}): {webpage_list}")
-
-  asyncio.run(main(
-    webpage_list,
-    config.getint('max_img_count'), config.getfloat('request_timeout'),
-    config['user_agent'], config['originals_dirname'], config['output_dirname']
-  ))
+  asyncio.run(main(read_config('config.ini')))

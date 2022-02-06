@@ -125,6 +125,7 @@ $ poetry run pycodestyle --show-source ./src/
 # unit tests
 $ poetry run pytest ./src/
 
-# clean logs
+# cleanup
 $ rm ./log/*.log
+$ rm -rf ./img-*
 ```

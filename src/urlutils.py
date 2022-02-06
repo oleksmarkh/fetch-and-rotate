@@ -3,26 +3,36 @@ from urllib.parse import urljoin, urldefrag, urlsplit, quote_plus
 from bs4 import BeautifulSoup
 
 
-def recompose(netloc: str, path: str, query: str, delimiter: str) -> str:
+def recompose(hostname: str, path: str, query: str, delimiter: str) -> str:
   if query == '':
-    return f"{netloc}{delimiter}{path}"
+    return delimiter.join([hostname, path])
+
   p = PurePath(path)
-  p1 = str(p.with_stem(f"{p.stem}{delimiter}{query}").with_suffix(''.join(p.suffixes)))
-  return f"{netloc}{delimiter}{p1}"
+  return delimiter.join([
+    hostname,
+    str(p.with_stem(f"{p.stem}{delimiter}{query}").with_suffix(''.join(p.suffixes)))
+  ])
 
 
-def convert(url: str) -> str:
+def get_dirname(url: str) -> str:
+  return urlsplit(url).hostname
+
+
+def get_filename(url: str) -> str:
   """
-  Converts an absolute URL into a `(dirname, filename)` tuple,
-  moving the query part before path suffix
-  and removing the leading slash, e.g.
+  Converts an absolute image URL into a its filename representation by:
+  * using hostname as prefix
+  * removing the leading slash from the path
+  * moving the query part before path suffix
+
+  For example:
   ```
   'https://sub.example.org/images/SomeExample.jpg?SomeParam=1' =>
   'sub.example.org--images%2FSomeExample--SomeParam%3D1.jpg'
   ```
   """
   components = urlsplit(url)
-  return quote_plus(recompose(components.netloc, components.path[1:], components.query, '--'))
+  return quote_plus(recompose(components.hostname, components.path[1:], components.query, '--'))
 
 
 def resolve(url: str, base_url: str) -> str:
@@ -41,7 +51,7 @@ def parse(markup: str, base_url: str) -> list[str]:
   Removes duplicates.
   """
 
-  keywords_to_exclude = {'adServer', 'scorecardresearch.com', '1px', 'avatar', 'profile', 'logo', 'static'}
+  keywords_to_exclude = {'adServer', 'scorecardresearch.com', '1px', 'avatar', 'profile', 'logo', 'static', '.svg'}
   soup = BeautifulSoup(markup, 'html.parser')
 
   # "soup.find_all()" returns a "ResultSet",
@@ -56,9 +66,9 @@ def parse(markup: str, base_url: str) -> list[str]:
   ]))
 
 
-def mix(urls: dict[str, list[str]]) -> list[str]:
+def mix(urls: dict[str, list[str]]) -> list[tuple[str, str]]:
   """
-  Flattens a dict (URLs per webpage) into a list of all image URLs,
+  Flattens a dict (URLs per webpage) into a list of `(webpage_url, img_url)` tuples,
   by picking URLs from each webpage (iterating over all lists with a common index):
   ```
   {
@@ -67,26 +77,30 @@ def mix(urls: dict[str, list[str]]) -> list[str]:
     p2: [p2[0], p2[1], p2[2], p2[3]],
     p3: [p3[0], p3[1]],
   } => [
-    p0[0], p2[0], p3[0],
-           p2[1], p3[1],
-           p2[2],
-           p2[3]
+    (p0, p0[0]), (p2, p2[0]), (p3, p3[0]),
+                 (p2, p2[1]), (p3, p3[1]),
+                 (p2, p2[2]),
+                 (p2, p2[3])
   ]
   ```
   """
 
+  webpage_url_list = list(urls.keys())
   url_list_list = urls.values()
 
   if (len(url_list_list) == 0):
     return []
 
   if (len(url_list_list) == 1):
-    return list(url_list_list)[0]
+    return [
+      (webpage_url_list[0], url)
+      for url in list(url_list_list)[0]
+    ]
 
   result = []
   for i in range(0, max(*[len(url_list) for url_list in url_list_list])):
-    for url_list in url_list_list:
+    for j, url_list in enumerate(url_list_list):
       if i < len(url_list):
-        result.append(url_list[i])
+        result.append((webpage_url_list[j], url_list[i]))
 
   return result
