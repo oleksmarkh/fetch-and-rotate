@@ -2,12 +2,14 @@ import asyncio
 import datetime
 import logging
 import mimetypes
-import requests
 import sys
 from configparser import ConfigParser
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import PurePath
+
+import requests
+from PIL import Image
 
 import fsutils
 import urlutils
@@ -20,14 +22,14 @@ class Config:
   user_agent: str
   input_filename: str
   log_dirname: str
-  originals_dirname: str
+  download_dirname: str
   output_dirname: str
 
 
 class ImgStatus(Enum):
   NOT_PROCESSED = 'not-processed'
   DOWNLOADED = 'downloaded'
-  PROCESS = 'processed'
+  PROCESSED = 'processed'
 
 
 @dataclass
@@ -44,12 +46,13 @@ def read_config(filename: str) -> Config:
   c = config_parser['DEFAULT']
   return Config(
     c.getint('max_img_count'), c.getfloat('request_timeout'), c['user_agent'],
-    c['input_filename'], c['log_dirname'], c['originals_dirname'], c['output_dirname']
+    c['input_filename'], c['log_dirname'], c['download_dirname'], c['output_dirname']
   )
 
 
 def config_logging(dirname: str, filename_datetime_format: str) -> None:
   filename = f"{datetime.datetime.now().strftime(filename_datetime_format)}.log"
+  fsutils.mkdir(dirname)
   logging.basicConfig(
     format='%(asctime)s [%(threadName)s] [%(levelname)s] %(message)s',
     level=logging.DEBUG,
@@ -114,10 +117,20 @@ async def download_and_rotate(img: Img, config: Config) -> str:
   if (extension):
     img.filename = str(PurePath(img.filename).with_suffix(extension))
 
-  original_dirpath = PurePath(config.originals_dirname, img.dirname)
-  original_filepath = PurePath(original_dirpath, img.filename)
-  fsutils.mkdir(original_dirpath)
-  fsutils.write_binary(original_filepath, response.content)
+  download_dirpath = PurePath(config.download_dirname, img.dirname)
+  download_filepath = PurePath(download_dirpath, img.filename)
+  output_dirpath = PurePath(config.output_dirname, img.dirname)
+  output_filepath = PurePath(output_dirpath, img.filename)
+
+  fsutils.mkdir(download_dirpath)
+  fsutils.mkdir(output_dirpath)
+  fsutils.write_binary(download_filepath, response.content)
+
+  img.status = ImgStatus.DOWNLOADED
+
+  with Image.open(str(download_filepath)) as img_pillow:
+    img_pillow.transpose(Image.ROTATE_180).save(str(output_filepath))
+    img.status = ImgStatus.PROCESSED
 
   return img.filename
 
