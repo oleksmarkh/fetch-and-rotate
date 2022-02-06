@@ -1,11 +1,12 @@
 import asyncio
 import datetime
 import logging
+import mimetypes
 import requests
 import sys
+from configparser import ConfigParser
 from dataclasses import dataclass
 from enum import Enum
-from configparser import ConfigParser
 from pathlib import PurePath
 
 import fsutils
@@ -103,14 +104,21 @@ async def fetch_and_parse_all(webpage_url_list: list[str], config: Config) -> di
 async def download_and_rotate(img: Img, config: Config) -> str:
   """
   Downloads, rotates and stores a single image.
+  Updates `img.filename` suffix if it can be guessed from its `Content-Type` header.
   Returns image filename.
   """
+
+  response = fetch(img.url, config)
+  extension = mimetypes.guess_extension(response.headers['Content-Type'])
+
+  if (extension):
+    img.filename = str(PurePath(img.filename).with_suffix(extension))
+
   original_dirpath = PurePath(config.originals_dirname, img.dirname)
+  original_filepath = PurePath(original_dirpath, img.filename)
   fsutils.mkdir(original_dirpath)
-  fsutils.write_binary(
-    PurePath(original_dirpath, img.filename),
-    fetch(img.url, config).content
-  )
+  fsutils.write_binary(original_filepath, response.content)
+
   return img.filename
 
 
