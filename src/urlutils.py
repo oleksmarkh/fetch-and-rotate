@@ -10,7 +10,7 @@ def recompose(hostname: str, path: str, query: str, delimiter: str) -> str:
   p = PurePath(path)
   return delimiter.join([
     hostname,
-    str(p.with_stem(f"{p.stem}{delimiter}{query}").with_suffix(''.join(p.suffixes)))
+    str(p.with_stem(delimiter.join([p.stem, query])).with_suffix(''.join(p.suffixes)))
   ])
 
 

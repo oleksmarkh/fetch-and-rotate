@@ -104,7 +104,7 @@ async def fetch_and_parse_all(webpage_url_list: list[str], config: Config) -> di
   return img_urls
 
 
-async def download_and_rotate(img: Img, config: Config) -> str:
+async def download_and_rotate(img: Img, config: Config) -> Img:
   """
   Downloads, rotates and stores a single image.
   Updates `img.filename` suffix if it can be guessed from its `Content-Type` header.
@@ -114,8 +114,8 @@ async def download_and_rotate(img: Img, config: Config) -> str:
   response = fetch(img.url, config)
   extension = mimetypes.guess_extension(response.headers['Content-Type'])
 
-  if (extension):
-    img.filename = str(PurePath(img.filename).with_suffix(extension))
+  if (extension and not img.filename.endswith(extension)):
+    img.filename += extension
 
   download_dirpath = PurePath(config.download_dirname, img.dirname)
   download_filepath = PurePath(download_dirpath, img.filename)
@@ -132,7 +132,7 @@ async def download_and_rotate(img: Img, config: Config) -> str:
     img_pillow.transpose(Image.ROTATE_180).save(str(output_filepath))
     img.status = ImgStatus.PROCESSED
 
-  return img.filename
+  return img
 
 
 async def download_and_rotate_batch(img_list: list[Img], config: Config) -> tuple[int, int]:
@@ -145,7 +145,7 @@ async def download_and_rotate_batch(img_list: list[Img], config: Config) -> tupl
     download_and_rotate(img, config)
     for img in img_list
   ]
-  # each element is either an Exception or an image filename
+  # each element is either an Exception or an Img object
   result_list = await asyncio.gather(*task_list, return_exceptions=True)
 
   err_count = 0
@@ -157,7 +157,6 @@ async def download_and_rotate_batch(img_list: list[Img], config: Config) -> tupl
       logging.error(f"Failed to download or rotate {img.url}: {result}")
     else:
       success_count += 1
-      # logging.info(f"Successfully downloaded and rotated: {img.url}")
 
   return (err_count, success_count)
 

@@ -3,15 +3,15 @@
 ## Structure
 
 ```bash
-├── img-original/
-│   └── {website-domain}/
-│       └── {image-url-encoded}
-├── img-rotated/
-│   └── {website-domain}/
-│       └── {image-url-encoded}
-├── log/
+├── img-original
+│   └── {website-hostname}
+│       └── {image-filename}
+├── img-rotated
+│   └── {website-hostname}
+│       └── {image-filename}
+├── log
 │   └── {YYYY-MM-DD--HH-MM-SS}.log
-├── src/
+├── src
 │   ├── tests/
 │   ├── fsutils.py
 │   ├── main.py
@@ -36,23 +36,24 @@
 neglected (all images are treated as unique as long as their URLs differ).
 * Even though it's not specified in the assignment,
 the script will try to equally take images from all websites,
-aiming for robust output.
+aiming for robust output (idempotence depends on webpage content,
+not on network latency).
+* Script is executed exactly once. Whatever happens,
+it aims to fetch/process a given number of images.
+There are scenarios were it'd make sense to re-execute the script
+(failures, interruptions, input/content changes),
+but then a cleanup is needed to avoid mixing different outputs.
 
-## Scenarios
+## Possible improvement
 
-1. Script is executed exactly once.
-Whatever happens - it aims to fetch/process a given number of images.
-2. Script can be executed multiple times, due to various reasons, e.g.:
-* Previous executions failed to process exactly 100 images.
-* The list of webpages changed.
-* Some webpages are non-idempotent (content changed).
-
-## Possible improvements.
-
-Manage a `set()` to `asyncio.wait()` for `asyncio.create_task()`
-to schedule image processing in a pool (concurrent queue),
+Schedule image processing in a pool (concurrent queue),
 instead of batching until success or exhaustion.
-Additionally, it would limit the number of outbound connections.
+Apart from not having to wait for each batch to finish,
+it would also limit a number of outbound connections.
+It could be implemented by managing
+a `tasks = set()` of `asyncio.create_task()`
+and `asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)`
+in a `while` loop.
 
 ## Dev dependencies
 
@@ -66,7 +67,6 @@ Additionally, it would limit the number of outbound connections.
 * HTTP transport: [`requests`](https://docs.python-requests.org/en/latest/user/quickstart/)
 * HTML parsing: [`beautifulsoup4`](https://www.crummy.com/software/BeautifulSoup/bs4/doc/)
 * image processing: [`pillow`](https://pillow.readthedocs.io/)
-  * [`im.transpose(Image.ROTATE_180)`](https://pillow.readthedocs.io/en/stable/handbook/tutorial.html#transposing-an-image)
 
 ## Commands
 
