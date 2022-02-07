@@ -12,7 +12,8 @@
 ├── log
 │   └── {YYYY-MM-DD--HH-MM-SS}.log
 ├── src
-│   ├── tests/
+│   └── tests
+│   │   └── test_urlutils.py
 │   ├── fsutils.py
 │   ├── main.py
 │   └── urlutils.py
@@ -44,29 +45,57 @@ There are scenarios were it'd make sense to re-execute the script
 (failures, interruptions, input/content changes),
 but then a cleanup is needed to avoid mixing different outputs.
 
-## Possible improvement
+## Possible improvements
 
-Schedule image processing in a pool (concurrent queue),
+### Scheduling
+
+Orchestrate image processing in a pool (concurrent queue),
 instead of batching until success or exhaustion.
 Apart from not having to wait for each batch to finish,
 it would also limit a number of outbound connections.
+
 It could be implemented by managing
 a `tasks = set()` of `asyncio.create_task()`
 and `asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)`
-in a `while` loop.
+in a `while` loop against a counter.
 
-## Dev dependencies
+However, figuring out a sensible limit value would be
+a task of its own, when trying to optimise for throughput.
+For current setup, given a rather small number of images to fetch
+and a list of somewhat reliable websites, almost every script run
+ends up with producing only a single batch or parallel requests.
+
+A typical run takes ~23s to process ~9MB of images from 5 websites,
+where first ~3s are spent on fetching and parsing websites content.
+Download speed is ~225Mb/s. Request timeout is configured to 2s.
+
+### Networking
+
+Manage a pool of reuseable HTTP2 connections.
+Would also require some experimentation with
+single/multiple connections per origin, to measure
+what would be faster - to pipeline requests or run them concurrently.
+
+### Not repeating same operations in case of reruns
+
+If a re-executing scenario would be considered, it'd make sense to
+first check if some image were already processed or at least downloaded,
+before scheduling them for fetching and rotation.
+
+## Dependencies
+
+### Runtime
+
+* HTTP transport: [`requests`](https://docs.python-requests.org/en/latest/user/quickstart/)
+* HTML parsing: [`beautifulsoup4`](https://www.crummy.com/software/BeautifulSoup/bs4/doc/)
+* image processing: [`pillow`](https://pillow.readthedocs.io/)
+
+## Dev env
 
 * python versioning: [`pyenv`](https://github.com/pyenv/pyenv/)
 * env/deps management: [`poetry`](https://python-poetry.org/docs/basic-usage/)
 * linter: [`pycodestyle`](https://pycodestyle.readthedocs.io/en/latest/)
 * unit tests: [`pytest`](https://pytest.org/en/latest/)
-
-## Dependencies
-
-* HTTP transport: [`requests`](https://docs.python-requests.org/en/latest/user/quickstart/)
-* HTML parsing: [`beautifulsoup4`](https://www.crummy.com/software/BeautifulSoup/bs4/doc/)
-* image processing: [`pillow`](https://pillow.readthedocs.io/)
 
 ## Commands
 
@@ -84,6 +113,7 @@ $ time poetry run python ./src/main.py
 
 # check results
 $ tree ./img-rotated/
+$ du -s ./img-*
 
 # lint
 $ poetry run pycodestyle --show-source ./src/

@@ -48,10 +48,13 @@ def parse(markup: str, base_url: str) -> list[str]:
   Filters out image URLs containing keywords from hardcoded list.
   Resolves each image URL against given base URL.
   Removes fragment (hash) from image URLs, since those aren't sent over HTTP.
-  Removes duplicates.
+  Removes duplicates (preserving an order).
   """
 
-  keywords_to_exclude = {'adServer', 'scorecardresearch.com', '1px', 'avatar', 'profile', 'logo', 'static', '.svg'}
+  keywords_to_exclude = {
+    'adServer', 'scorecardresearch.com', '1px',
+    'avatar', 'profile', 'logo', 'static', '.svg'
+  }
   soup = BeautifulSoup(markup, 'html.parser')
 
   # "soup.find_all()" returns a "ResultSet",
@@ -59,7 +62,7 @@ def parse(markup: str, base_url: str) -> list[str]:
   # Also it's possible to end up with same absolute URLs
   # after resolving different relative URLs and removing fragments.
   # That's why deduplication happens after all transformations.
-  return list(set([
+  return list(dict.fromkeys([
     resolve(img_tag['src'], base_url)
     for img_tag in soup.find_all('img', attrs={'src': True})
     if not any(keyword in img_tag['src'] for keyword in keywords_to_exclude)
