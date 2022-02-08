@@ -10,6 +10,7 @@ from pathlib import PurePath
 
 import requests
 from PIL import Image
+from sqlalchemy import create_engine, engine, exc, Table, MetaData
 
 import fsutils
 import urlutils
@@ -21,6 +22,7 @@ class Config:
   request_timeout: float
   user_agent: str
   input_filename: str
+  db_filepath: str
   log_dirname: str
   download_dirname: str
   output_dirname: str
@@ -39,14 +41,23 @@ class Img:
   filename: str
   status: ImgStatus = ImgStatus.NOT_PROCESSED
 
+  def serialize(self) -> dict[str, str]:
+    return dict(
+      url=self.url,
+      dirname=self.dirname,
+      filename=self.filename,
+      status=self.status.value,
+    )
+
 
 def read_config(filename: str) -> Config:
   config_parser = ConfigParser()
   config_parser.read(filename)
   c = config_parser['DEFAULT']
   return Config(
-    c.getint('max_img_count'), c.getfloat('request_timeout'), c['user_agent'],
-    c['input_filename'], c['log_dirname'], c['download_dirname'], c['output_dirname']
+    c.getint('max_img_count'), c.getfloat('request_timeout'),
+    c['user_agent'], c['input_filename'], c['db_filepath'],
+    c['log_dirname'], c['download_dirname'], c['output_dirname']
   )
 
 
@@ -161,7 +172,9 @@ async def download_and_rotate_batch(img_list: list[Img], config: Config) -> tupl
   return (err_count, success_count)
 
 
-async def download_and_rotate_all(img_list: list[Img], config: Config) -> tuple[int, int]:
+async def download_and_rotate_all(
+  img_list: list[Img], db_connection: engine.Connection, imgs_table: Table, config: Config
+) -> tuple[int, int]:
   """
   Slices the first batch of `max_img_count` URLs from `img_list`
   and schedules them for downloading and rotation.
@@ -178,7 +191,8 @@ async def download_and_rotate_all(img_list: list[Img], config: Config) -> tuple[
   while True:
     logging.info(f"Downloading and rotating images (batch #{batch_index}): [{slice_from}, {slice_to})")
 
-    err_count, success_count = await download_and_rotate_batch(img_list[slice_from:slice_to], config)
+    img_batched_list = img_list[slice_from:slice_to]
+    err_count, success_count = await download_and_rotate_batch(img_batched_list, config)
     err_count_total += err_count
     success_count_total += success_count
 
@@ -186,6 +200,12 @@ async def download_and_rotate_all(img_list: list[Img], config: Config) -> tuple[
       f"Images failed/succeeded/aimed (batch #{batch_index}): "
       f"{err_count}/{success_count}/{slice_to - slice_from}"
     ))
+
+    result = db_connection.execute(
+      imgs_table.insert(),
+      [img.serialize() for img in img_batched_list]
+    )
+    logging.info(f"Inserted {result.rowcount} records into '{imgs_table.name}' table")
 
     if (slice_to > len(img_list)):
       logging.warning(f"Image list is exhausted: {len(img_list)}")
@@ -202,9 +222,7 @@ async def download_and_rotate_all(img_list: list[Img], config: Config) -> tuple[
   return (err_count_total, success_count_total)
 
 
-async def main(config: Config) -> None:
-  config_logging(config.log_dirname, '%Y-%m-%d--%H-%M-%S')
-
+async def main(db_connection: engine.Connection, imgs_table: Table, config: Config) -> None:
   webpage_url_list = fsutils.read_line_list(config.input_filename)
   logging.info(f"List of webpages ({len(webpage_url_list)}): {webpage_url_list}")
 
@@ -227,10 +245,20 @@ async def main(config: Config) -> None:
     logging.warning("Nothing to download, no image URLs available")
     sys.exit(1)
 
-  err_count, success_count = await download_and_rotate_all(img_list, config)
+  err_count, success_count = await download_and_rotate_all(img_list, db_connection, imgs_table, config)
   logging.info(f"Images failed/succeeded/aimed (total): {err_count}/{success_count}/{config.max_img_count}")
   sys.exit(0 if success_count == config.max_img_count else 1)
 
 
 if __name__ == '__main__':
-  asyncio.run(main(read_config('config.ini')))
+  config = read_config('config.ini')
+  config_logging(config.log_dirname, '%Y-%m-%d--%H-%M-%S')
+
+  db_engine = create_engine(f"sqlite:///{config.db_filepath}")
+
+  try:
+    with db_engine.connect() as db_connection:
+      imgs_table = Table('imgs', MetaData(), autoload=True, autoload_with=db_engine)
+      asyncio.run(main(db_connection, imgs_table, config))
+  except exc.InterfaceError as error:
+    logging.error(f"SQLAlchemy InterfaceError:\n{error}")

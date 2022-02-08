@@ -3,6 +3,10 @@
 ## Structure
 
 ```bash
+├── db
+│   ├── imgs.db
+│   ├── imgs.dump.sql
+│   └── schema.sql
 ├── img-original
 │   └── {website-hostname}
 │       └── {image-filename}
@@ -12,7 +16,7 @@
 ├── log
 │   └── {YYYY-MM-DD--HH-MM-SS}.log
 ├── src
-│   └── tests
+│   ├── tests
 │   │   └── test_urlutils.py
 │   ├── fsutils.py
 │   ├── main.py
@@ -89,6 +93,7 @@ before scheduling them for fetching and rotation.
 * HTTP transport: [`requests`](https://docs.python-requests.org/en/latest/user/quickstart/)
 * HTML parsing: [`beautifulsoup4`](https://www.crummy.com/software/BeautifulSoup/bs4/doc/)
 * image processing: [`pillow`](https://pillow.readthedocs.io/)
+* SQL toolkit: [`sqlalchemy`](https://www.sqlalchemy.org/)
 
 ## Dev env
 
@@ -100,13 +105,16 @@ before scheduling them for fetching and rotation.
 ## Commands
 
 ```bash
-# python version
-$ brew install pyenv
+# python version and DB
+$ brew install pyenv sqlite
 $ pyenv install 3.10.2
 
-# deps
+# python deps
 $ curl -sSL https://install.python-poetry.org | python3 -
 $ poetry install
+
+# init DB
+$ sqlite3 ./db/imgs.db < ./db/schema.sql
 
 # run
 $ time poetry run python ./src/main.py
@@ -114,6 +122,9 @@ $ time poetry run python ./src/main.py
 # check results
 $ tree ./img-rotated/
 $ du -s ./img-*
+$ sqlite3 ./db/imgs.db 'SELECT COUNT(*) FROM imgs;'
+$ sqlite3 ./db/imgs.db 'SELECT * FROM imgs;'
+$ sqlite3 ./db/imgs.db .dump > ./db/imgs.dump.sql
 
 # lint
 $ poetry run pycodestyle --show-source ./src/

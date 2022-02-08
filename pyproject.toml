@@ -9,6 +9,7 @@ python = "^3.10"
 requests = "^2.27.1"
 Pillow = "^9.0.1"
 beautifulsoup4 = "^4.10.0"
+SQLAlchemy = "^1.4.31"
 
 [tool.poetry.dev-dependencies]
 pycodestyle = "^2.8.0"
